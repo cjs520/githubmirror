@@ -1,11 +1,17 @@
 const listenPort = 9083;
 
 const request = require("request");
-const concat = require('concat-stream');
 const express = require('express');
 const app = express();
 const tgt = "https://github.com";
 const zlib = require('zlib');
+
+function urlReplace(data){
+    if(!data.replace){
+        return data;
+    }
+    return data.replace(/(?<=[https\:\/\/|\s*|"|'])github\.com/g, "github.trs.ai");
+}
 
 function replaceBody(response,buffer,callback){
     var encoding = response.headers['content-encoding'];
@@ -22,25 +28,29 @@ function replaceBody(response,buffer,callback){
     console.log("Replace url in body.");
     if(decoder != undefined){
         decoder(buffer, function (err, decoded) {
-            data = decoded.toString();
-            data = data.replace(/github.com/g, "github.trs.ai");
+            data = urlReplace(decoded.toString());
 
             encoder(data,function(err,buffer){
                 callback( err,  buffer); 
             });
         });
     }else{
-        data = buffer.toString();
-        data = data.replace(/github.com/g, "github.trs.ai");
+        data = urlReplace(buffer.toString());
         
         callback( null,   data);
+    }
+}
+
+function replaceHeaders(response){
+    for(var key in response.headers){
+        response.headers[key]  = urlReplace(response.headers[key]);
     }
 }
 
 function pipReq(req, res) {
     var requrl = tgt + req.originalUrl;
     const r = request[req.method.toLowerCase()]({
-       // proxy:"http://localhost:8888",
+      //  proxy:"http://localhost:8888",
         "strictSSL":false,
         "followRedirect":false,
         "body":req.body,
@@ -48,8 +58,6 @@ function pipReq(req, res) {
         encoding:null,
         "headers": {
             "host": "github.com",
-            "Origin":"https://github.com",
-            "Referer":requrl
         }
     },function (err, response, body){
         if(err){
@@ -61,6 +69,9 @@ function pipReq(req, res) {
 
         console.log(`statusCode: ${response.statusCode} Url: ${requrl} `);
 
+        // replaceHeaders(response);
+        // delete response.headers["content-security-policy"];
+        // delete response.headers["set-cookie"];
         res.writeHead(response.statusCode, response.headers);
 
         let contentTypes = response.headers["content-type"];
